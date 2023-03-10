@@ -1,0 +1,84 @@
+version: "3"
+services:
+
+  redis:
+    image: redis
+    restart: always
+    ports:
+      - "6380:6379"
+
+  db:
+    image: postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: authDB
+      NODE_ENV: docker
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./data:/var/lib/postgresql/data
+
+  db2:
+    image: postgres
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_DB: backendDB
+      NODE_ENV: docker
+    ports:
+      - "5434:5432"
+    volumes:
+      - ./data2:/var/lib/postgresql/data
+
+  auth-migration:
+    build: 
+      context: ../auth
+      dockerfile: Dockerfile.migrations
+    command: npx sequelize-cli db:migrate
+    environment:
+      NODE_ENV: docker
+    depends_on:
+      - db
+      - redis
+    
+  auth-service:
+    build: ../auth
+    restart: always
+    depends_on:
+      - db
+      - redis
+      - auth-migration
+    ports:
+      - "4000:4000"
+    environment:
+      NUMBER_OF_SALTS_ROUNDS: 10
+      JWT_SECRET_KEY: secret-key
+      REDIS_HOST: docker.for.mac.localhost
+      NODE_ENV: docker
+
+  backend-migration:
+    build: 
+      context: ../backend
+      dockerfile: Dockerfile.migrations
+    command: npx sequelize-cli db:migrate
+    environment:
+      NODE_ENV: docker
+    depends_on:
+      - db2
+      - redis
+
+  backend-server:
+    build: ../backend
+    restart: always
+    depends_on:
+      - db2
+      - auth-service
+      - backend-migration
+    ports:
+      - "8080:8080"
+    environment:
+      NODE_ENV: docker
+      AUTH_URL: docker.for.mac.localhost
